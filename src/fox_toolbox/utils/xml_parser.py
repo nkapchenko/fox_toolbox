@@ -97,7 +97,7 @@ def get_curves(xmlfile):
 
 def get_hw_params(xmlfile):
     params_node = xmlfile.find('.//FactorsList/Factors/Factor')
-    _, buckets, values = parse_1d_curve(params_node.find('VolatilityCurve/OneDCurve'))
+    _, _, buckets, values = parse_1d_curve(params_node.find('VolatilityCurve/OneDCurve'))
     mr = get_float_node(params_node, 'MeanRR')
     return mr, (buckets, values)
     
@@ -131,6 +131,7 @@ def get_calib_instr(node):
         dcfs,
         get_int_node(node, 'CalInstTenor'),
         lvl=get_int_node(node, 'CalibrationLevel'),
+        pay_rec = get_str_node(node, 'PayReceive'),
         cal_type=get_str_node(node, 'CalInstKType'),
         strike=get_float_node(node, 'Strike', np.nan) / 100.,
         cal_vol=get_float_node(node, 'CalibratedVolatility', np.nan),
