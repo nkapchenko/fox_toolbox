@@ -134,10 +134,6 @@ class Swap:
         return np.copy(self._pmnt_dates)
 
     @property
-    def dcfs(self):
-        return np.copy(self._dcfs)
-
-    @property
     def day_count_fractions(self):
         return np.copy(self._dcfs)
 
