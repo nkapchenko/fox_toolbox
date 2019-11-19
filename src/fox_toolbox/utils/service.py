@@ -29,7 +29,7 @@ correls = {
 
 
 
-def get_curve_mkt_data(ccy, curve):
+def _get_curve_mkt_data(ccy, curve):
     return {'rates': {
                         ccy: {'rateCurve': curve}
                     }
@@ -38,8 +38,8 @@ def get_curve_mkt_data(ccy, curve):
 def add_swo_vol_mkt_data(swap_mkt, ccy, smiles):
     swap_mkt['rates'][ccy]['horizontalSwaptionVolatilities'] = smiles
 
-def get_swo_vol_mkt_data(ccy, curve, smiles):
-    swo_mkt = get_curve_mkt_data(ccy, curve)
+def _get_swo_vol_mkt_data(ccy, curve, smiles):
+    swo_mkt = _get_curve_mkt_data(ccy, curve)
     add_swo_vol_mkt_data(swo_mkt, ccy, smiles)
     return swo_mkt
 
@@ -51,8 +51,8 @@ def add_swo_correl_mkt_data(swo_mkt, ccy, expiry, correl, tenors):
                                             }
 
 
-def get_swo_correl_mkt_data(ccy, curve, smiles, expiry, correl, tenors):
-    swo_correl_mkt = get_swo_vol_mkt_data(ccy, curve, smiles)
+def _get_swo_correl_mkt_data(ccy, curve, smiles, expiry, correl, tenors):
+    swo_correl_mkt = _get_swo_vol_mkt_data(ccy, curve, smiles)
     add_swo_correl_mkt_data(swo_correl_mkt, ccy, expiry, correl, tenors)
     return swo_correl_mkt
 
@@ -60,7 +60,7 @@ def get_swo_correl_mkt_data(ccy, curve, smiles, expiry, correl, tenors):
 """----------------------------------------GET PAYOFF----------------------------------------------------"""
 
 
-def get_swap_simple(self):
+def _get_swap_simple(self):
     return  {
                  "nominal": self.nominal,
                  "startDate": self.start,
@@ -72,7 +72,7 @@ def get_swap_simple(self):
 
 
 
-def get_swap(start, end, floatFreq, fixFreq, fixRate, spread, N):
+def _get_swap(ccy, start, end, floatFreq, fixFreq, fixRate, spread, N):
     assert start <= end, 'start > end'
 
     # might be simplified with itertools.product([True, False], [floatFreq, fixFreq])
@@ -90,7 +90,7 @@ def get_swap(start, end, floatFreq, fixFreq, fixRate, spread, N):
                 "paymentDates": endDatesPay,
                 "dayCountConvention": "30/360"
             },
-            "paymentCurrency": "USD"
+            "paymentCurrency": ccy
         },
         "receiverLeg": {
             "schedule": {
@@ -100,25 +100,25 @@ def get_swap(start, end, floatFreq, fixFreq, fixRate, spread, N):
                 "paymentDates": endDatesRec,
                 "dayCountConvention": "ACT/365"
             },
-            "rateIndex": "USDLIBOR" + floatFreq,
+            "rateIndex": f"{ccy}LIBOR" + floatFreq,
             "rateSpread": spread,
-            "paymentCurrency": "USD"
+            "paymentCurrency": ccy
         },
     }
 
 
-def get_swo(start, end, floatFreq, fixFreq, fixRate, spread, N, expiry):
+def _get_swo(ccy, start, end, floatFreq, fixFreq, fixRate, spread, N, expiry):
     return {
-                "swap": get_swap(start, end, floatFreq, fixFreq, fixRate, spread, N),
+                "swap": _get_swap(ccy, start, end, floatFreq, fixFreq, fixRate, spread, N),
                 "exerciseDate": expiry
                 }
 
 
 """-----------------------------------------------GET TASK--------------------------------------------------"""
 
-def get_curve_task(ccy, curve, asof):
+def _get_task_form(ccy, curve, asof):
     return {
-        "marketData": get_curve_mkt_data(ccy, curve),
+        "marketData": _get_curve_mkt_data(ccy, curve),
         "settings": {
                     "pricingDate": generate_date(asof),
                     "hardware": "CPU",
@@ -129,7 +129,15 @@ def get_curve_task(ccy, curve, asof):
 
 
 def get_bond_task(ccy, curve, asof, pmnt_date):
-    task = get_curve_task(ccy, curve, asof)
+    """
+
+    :str ccy: 'EUR'
+    :curve dsc_curve: dict (check mkt data example)
+    :datetime asof: datetime(2018, 5, 12)
+    :datetime pmnt_date: datetime(2019, 5, 12)
+    """
+
+    task = _get_task_form(ccy, curve, asof)
     task['fixedFlow'] = {"currency": ccy, "paymentDate": generate_date(pmnt_date)}
     return task
 
@@ -137,19 +145,19 @@ def get_bond_task(ccy, curve, asof, pmnt_date):
 def get_libor_flow_task(ccy, dsc_curve, asof, tenor, fixingDate, paymentDate, libor_curve=None):
     """
 
-    :param ccy:
-    :param dsc_curve:
-    :param asof:
-    :param tenor:
-    :param fixingDate:
-    :param paymentDate:
+    :str ccy: 'EUR'
+    :curve dsc_curve: dict (check mkt data example)
+    :datetime asof: datetime(2018, 5, 12)
+    :int tenor: 6
+    :datetime fixingDate: datetime(2018, 5, 12)
+    :datetime paymentDate: datetime(2018, 5, 12)
     :None, float or dict libor_curve:
         if None: flat curve 0.01 * tenor
         if float: flat curve float_value
         if dict: user defined libor curve
     """
 
-    task = get_curve_task( ccy, dsc_curve, asof)
+    task = _get_task_form(ccy, dsc_curve, asof)
     add_libor_curve(task, ccy, tenor, curve=libor_curve)
     task['liborFlow'] = {
               "liborIndex": f"{ccy}LIBOR{tenor}M",
@@ -171,8 +179,8 @@ def get_swap_task(start, end, floatFreq, fixFreq, fixRate, spread, N, ccy, curve
     :dict curve: please check service market data examples at the beginning
     :datetime asof: ex. datetime(2018, 3, 23)
     """
-    swap_task = get_curve_task(ccy, curve, asof)
-    swap_task['vanillaSwap'] = get_swap(start, end, floatFreq, fixFreq, fixRate, spread, N)
+    swap_task = _get_task_form(ccy, curve, asof)
+    swap_task['vanillaSwap'] = _get_swap(ccy, start, end, floatFreq, fixFreq, fixRate, spread, N)
     return swap_task
 
 
@@ -182,10 +190,10 @@ def get_swo_task(start, end, floatFreq, fixFreq, fixRate, spread, N, ccy, curve,
     :string expiry: expity of swaption ex. '1Y'
     :dict smiles: volatiltiy curves, please check service market data examples at the beginning
     """
-    swo_task = get_curve_task(ccy, curve, asof)
-    swo_task['marketData'] = get_swo_vol_mkt_data(ccy, curve, smiles)
+    swo_task = _get_task_form(ccy, curve, asof)
+    swo_task['marketData'] = _get_swo_vol_mkt_data(ccy, curve, smiles)
     swo_task['diffusion'] = {"rates": {ccy: {"type": "BLACK_FORWARD"}}}
-    swo_task['rateEuropeanSwaption'] = get_swo(start, end, floatFreq, fixFreq, fixRate, spread, N, expiry)
+    swo_task['rateEuropeanSwaption'] = _get_swo(ccy, start, end, floatFreq, fixFreq, fixRate, spread, N, expiry)
     return swo_task
 
 
@@ -197,8 +205,8 @@ def get_mco_task(start, end, floatFreq, fixFreq, fixRate, spread, N, ccy, curve,
     :float meanR: mean reversion parameter in Hull White model, ex. 0.1
     :int mco_proxy: type of mid curve approximation , ex. 1
     """
-    mco_task = get_curve_task(ccy, curve, asof)
-    mco_task['marketData'] = get_swo_correl_mkt_data(ccy, curve, smiles, expiry, correl, tenors)
+    mco_task = _get_task_form(ccy, curve, asof)
+    mco_task['marketData'] = _get_swo_correl_mkt_data(ccy, curve, smiles, expiry, correl, tenors)
     mco_task['diffusion'] = {
                         "rates": {
                                 ccy: {
@@ -216,7 +224,7 @@ def get_mco_task(start, end, floatFreq, fixFreq, fixRate, spread, N, ccy, curve,
                     "numericalMethod": "COPULA",
                     "modelPrecision": "HUGE"
                 }
-    mco_task['midcurveSwaption'] = get_swo(start, end, floatFreq, fixFreq, fixRate, spread, N, expiry)
+    mco_task['midcurveSwaption'] = _get_swo(ccy, start, end, floatFreq, fixFreq, fixRate, spread, N, expiry)
 
     return mco_task
 
@@ -227,7 +235,11 @@ def add_swap_initial_stub(task, initial_stub_date, indexes=None):
     """
 
     :param initial_stub: datetime.datetime
+    list indexes: ['EURLIBOR3M'] or ['EURLIBOR3M' , 'EURLIBOR6M']
     """
+
+    assert 'vanillaSwap' in task, 'your task is not a swap task'
+
     start_date = task['vanillaSwap']['payerLeg']['schedule']['startDates'][0]
 
     task['vanillaSwap']['receiverLeg']['schedule']['fixingDates'] = [generate_date(initial_stub_date)] + task['vanillaSwap']['receiverLeg']['schedule']['fixingDates']
@@ -267,12 +279,11 @@ def add_libor_curve(task, ccy, tenor, curve=None):
             abs_value = 0.001 * tenor
         else:
             abs_value = curve
-        curve = {'rateCurve': {
-                                "dates": ["2018-01-01T00:00:00.000Z", "2023-01-01T00:00:00.000Z"],
-                               "zeroRates": [abs_value] * 2}
-                                }
+        curve = {
+                            "dates": ["2018-01-01T00:00:00.000Z", "2023-01-01T00:00:00.000Z"],
+                            "zeroRates": [abs_value] * 2}
 
-    task['marketData']['rates'][f'{ccy}LIBOR{tenor}M'] = curve
+    task['marketData']['rates'][f'{ccy}LIBOR{tenor}M'] = {'rateCurve': curve}
 
 
 def change_fixRate(task, value):
