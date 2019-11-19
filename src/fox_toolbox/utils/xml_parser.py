@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+import pandas as pd
 
 import numpy as np
 
@@ -147,3 +148,54 @@ def get_calib_instr(node):
 def get_calib_basket(xmlfile):
     for instr in xmlfile.iterfind(".//CalibrationInstrument"):
         yield get_calib_instr(instr)
+
+
+def parse_process(xml_node):
+    assert xml_node.tag == 'Process', 'should be <Process> node'
+    main_curve, spread_curves = get_curves(xml_node)
+    dic_ = {
+        'pillars': main_curve.curve_pillars,
+        main_curve.label: main_curve.zc_rates
+
+    }
+    for spread_curve in spread_curves:
+        dic_[spread_curve.label] = spread_curve.zc_rates
+    return pd.DataFrame(dic_)
+
+
+def parse_process_list(xml_node):
+    """xml_node = BucketProcess"""
+    dfs = []
+    for p in xml_node.findall('.//Process'):
+        ccy = get_str_node(p, './/ProcessLabel')
+        df = parse_process(p)
+        df['ccy'] = ccy
+        dfs.append(df)
+    return pd.concat(dfs, ignore_index=True)
+
+
+def parse_debug(xml_node):
+    qfields = 'QRType QRLabel QRAsset QRLevel QRRefCurveLabel'.split(' ')
+    dfs = []
+    for query in xml_node.findall('.//Query'):
+        qdfs = []
+        qr_buckets_list = get_delim_float_node(query, './/QRBuckets/OneDCurve/Buckets', 0.0)
+        for qr_bucket, process_list in zip(qr_buckets_list, query.findall('.//BucketProcess')):
+            df = parse_process_list(process_list)
+            df['Bucket'] = qr_bucket
+            qdfs.append(df)
+
+        qdf = pd.concat(qdfs, ignore_index=True)  # concat by bump pillars
+        for qfield in qfields:
+            qdf[qfield] = get_str_node(query, f'.//{qfield}')
+        dfs.append(qdf)
+    return pd.concat(dfs, ignore_index=True)  # concat by queries
+
+
+def get_bumped_curves(xmlfile):
+    main_curve, sprds = get_curves(xmlfile.find('.//Process'))
+    labels = [curve.label for curve in sprds]
+    labels.insert(0, main_curve.label)
+    df = parse_debug(xmlfile)
+    for lbl in labels:
+        yield df.pivot_table(values=[lbl], index=['ccy','pillars'], columns=['QRType', 'Bucket'])
