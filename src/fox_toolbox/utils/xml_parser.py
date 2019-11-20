@@ -192,10 +192,15 @@ def parse_debug(xml_node):
     return pd.concat(dfs, ignore_index=True)  # concat by queries
 
 
-def get_bumped_curves(xmlfile):
+def _get_bumped_curves(xmlfile):
     main_curve, sprds = get_curves(xmlfile.find('.//Process'))
     labels = [curve.label for curve in sprds]
     labels.insert(0, main_curve.label)
     df = parse_debug(xmlfile)
     for lbl in labels:
         yield df.pivot_table(values=[lbl], index=['ccy','pillars'], columns=['QRType', 'Bucket'])
+
+
+def get_bumped_curves(xmlfile):
+    """return list of data frames. each data frame is all bump scenarios for specific curve label (ex. USD STD)"""
+    return list(_get_bumped_curves(xmlfile))
