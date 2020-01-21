@@ -15,44 +15,29 @@ def build_class_str(self, args_dic):
         yield from (f'{key}: {val!r}' for key, val in args_dic)
     return '\n'.join(generate())
 
+class _Curve:
 
-class Curve:
-    """
-    An interest rate curve object which build interpolator upon intialization
-    and provides vectorized methods for efficient retrieval of zero-coupons and
-    discount factors.
-
-    Warning: Modification of curve pillars or values won't result in interpolator
-    recalibration.
-    """
     @staticmethod
-    def build_curve(x, y):
+    def build_curve(x, y, kind='linear'):
         """
         Returns curve interpolator function
         """
-        return interp1d(x, y, kind='linear', copy=True, bounds_error=False,
+        return interp1d(x, y, kind=kind, copy=True, bounds_error=False,
                         fill_value='extrapolate', assume_sorted=False)
 
-    def __init__(self, dates: np.array, values: np.array, interpolation_method: str, label: str = ''):
-        """
-        Build a new curve
-        :param dates: curve pillars as float array
-        :param values: zero-coupon rates as float array
-        :param interpolation_method: supporting only Linear and RateTime_Linear methods
-        """
+    def __init__(self, buckets: np.array, values: np.array, interpolation_method: str, label: str = ''):
+
         self._interpolation_method = str(interpolation_method)
-        self._dates = cast_to_array(dates, float)
-        if np.any(self._dates < 0.):
-            raise Exception('Negative dates are not supported')
+        self._buckets = cast_to_array(buckets, float)
         self._values = cast_to_array(values, float)
         # x = np.insert(self._dates, 0, 1e-6)
         # y = np.insert(self._values, 0, self._values[0])
-        if interpolation_method == 'Linear':
-            self._curve = Curve.build_curve(self._dates, self._values)
-            self.__ratelinear = False
+        if interpolation_method == 'PieceWise':
+            self._curve = Curve.build_curve(self._buckets, self._values, kind='zero')
+        elif interpolation_method == 'Linear':
+            self._curve = Curve.build_curve(self._buckets, self._values)
         elif interpolation_method == 'RateTime_Linear':
-            self._curve = Curve.build_curve(self._dates, self._dates * self._values)
-            self.__ratelinear = True
+            self._curve = Curve.build_curve(self._buckets, self._buckets * self._values)
         else:
             raise NotImplementedError(f'"{self._interpolation_method}" interpolation method is not supported.')
 
@@ -66,6 +51,70 @@ class Curve:
     def label(self):
         return self._label
 
+    def dump(self):
+        return {
+            'label': self._label,
+            'pillars': list(self._buckets),
+            'zc_rates': list(self._values)
+        }
+
+    def __iter__(self):
+        return (i for i in zip(self._buckets, self._values))
+
+    def __repr__(self):
+        class_name = type(self).__name__
+        return f'{class_name}({self._buckets!r}, {self._values!r}, {self._interpolation_method}, {self._label!r})'
+
+    def __str__(self):
+        lbls = 'Name Pillars Zero-coupons Interpolation'.split(' ')
+        data = (self._label, self._buckets, self._values, self._interpolation_method,)
+        return build_class_str(self, zip(lbls, data))
+
+
+class Curve1d(_Curve):
+    def __init__(self,  buckets: np.array, values: np.array, interpolation_method: str, label: str = ''):
+        super().__init__(buckets, values, interpolation_method, label)
+
+    @property
+    def buckets(self):
+        return np.copy(self._buckets)
+
+    @property
+    def values(self):
+        return np.copy(self._values)
+
+    def get_value(self, t):
+        time = np.asarray(t)
+        return self._curve(time)
+
+
+class Curve(_Curve):
+    """
+    An interest rate curve object which build interpolator upon intialization
+    and provides vectorized methods for efficient retrieval of zero-coupons and
+    discount factors.
+
+    Warning: Modification of curve pillars or values won't result in interpolator
+    recalibration.
+    """
+
+    def __init__(self,  buckets: np.array, values: np.array, interpolation_method: str, label: str = ''):
+        """
+           Build a new curve
+           :param buckets: curve pillars as float array
+           :param values: zero-coupon rates as float array
+           :param interpolation_method: supporting only Linear and RateTime_Linear methods
+           """
+        super().__init__(buckets, values, interpolation_method, label)
+        assert interpolation_method in ['Linear', 'RateTime_Linear'], 'only Linear and RateTime_Linear interpolation is supported'
+        self._dates = buckets
+        self.__ratelinear = True if interpolation_method == 'RateTime_Linear' else False
+
+        if np.any(self._dates < 0.):
+            raise Exception('Negative dates are not supported')
+
+
+
     @property
     def curve_pillars(self):
         return np.copy(self._dates)
@@ -74,26 +123,9 @@ class Curve:
     def zc_rates(self):
         return np.copy(self._values)
 
-    def __iter__(self):
-        return (i for i in zip(self._dates, self._values))
-
-    def __repr__(self):
-        class_name = type(self).__name__
-        return f'{class_name}({self.label!r}, {self._dates!r}, {self._values!r}, {self.interpolation_mode})'
-
-    def __str__(self):
-        lbls = 'Name Pillars Zero-coupons Interpolation'.split(' ')
-        data = (self.label, self._dates, self._values, self._interpolation_method,)
-        return build_class_str(self, zip(lbls, data))
-
-    def dump(self):
-        return {
-            'label': self.label,
-            'pillars': list(self.curve_pillars),
-            'zc_rates': list(self.zc_rates)
-        }
 
     def get_zc(self, t):
+        t = float(t) if isinstance(t, int) else t
         time = np.asarray(t)
         res = self._curve(time)
         if self.__ratelinear:
@@ -105,6 +137,7 @@ class Curve:
         return res if res.size > 1 or isinstance(t, np.ndarray) else type(t)(res)
 
     def get_dsc(self, t):
+        t = float(t) if isinstance(t, int) else t
         time = np.asarray(t)
         res = np.exp(-np.multiply(self.get_zc(time), time, where=time >= 0.,
                                   out=np.full_like(time, np.nan, dtype=np.double)))
@@ -199,6 +232,7 @@ class Swaption(Swap):
     def __init__(self, expiry, vol, start_date, pmnt_dates, dcfs, libor_tenor, **kwargs):
         super().__init__(start_date, pmnt_dates, dcfs, libor_tenor)
         self._expiry = float(expiry)
+
         if not isinstance(vol, Volatility):
             TypeError('{} must be a {}'.format('vol', Volatility))
         self._vol = vol

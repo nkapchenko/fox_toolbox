@@ -134,7 +134,7 @@ def get_calib_instr(node):
         lvl=get_int_node(node, 'CalibrationLevel'),
         pay_rec = get_str_node(node, 'PayReceive'),
         cal_type=get_str_node(node, 'CalInstKType'),
-        strike=get_float_node(node, 'Strike', np.nan) / 100.,
+        strike=get_float_node(node, 'Strike', 0.) / 100., #if no strike in irsm log => strike == 0 (?)
         cal_vol=get_float_node(node, 'CalibratedVolatility', np.nan),
         fwd=get_float_node(node, 'SwapRateInfo/SpotSwapRate', np.nan),
         annuity=get_float_node(node, 'SwapRateInfo/FixLeg', np.nan),
@@ -175,6 +175,7 @@ def parse_process_list(xml_node):
 
 
 def parse_debug(xml_node):
+	# Nikita
     qfields = 'QRType QRLabel QRAsset QRLevel QRRefCurveLabel'.split(' ')
     dfs = []
     for query in xml_node.findall('.//Query'):
@@ -201,6 +202,12 @@ def _get_bumped_curves(xmlfile):
         yield df.pivot_table(values=[lbl], index=['ccy','pillars'], columns=['QRType', 'Bucket'])
 
 
-def get_bumped_curves(xmlfile):
+def get_bumped_curves(xml_name):
     """return list of data frames. each data frame is all bump scenarios for specific curve label (ex. USD STD)"""
+    _, xmlfile = get_xml(xml_name)
     return list(_get_bumped_curves(xmlfile))
+
+def get_curve_bumps(xml_name):
+    bumped_curves = get_bumped_curves(xml_name)
+    for crv in bumped_curves:
+        yield crv - crv

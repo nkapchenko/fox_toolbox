@@ -83,6 +83,10 @@ def _irsmBlackNormalImpliedVolFG (dForward, dStrike, dPremium, w):
     return dVolatilityFG if dVolatilityFG > 0.0 else 0.02 
 
 def BachelierPrice(F, K, v, w = 1.0):
+    """v : double
+        `v` is a total volatility. Normally it's :math:`\sigma\sqrt{T}`.
+    w : {-1.0, 1.0}, optional
+        `w` is 1.0 for call option and -1.0 for put (the default is 1.0)."""
     from scipy.stats import norm
     if abs(w) != 1.0: 
         raise ValueError('w should be 1.0 or -1.0.')

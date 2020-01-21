@@ -1,10 +1,8 @@
 from macs_service.date_util import generate_date, generate_dates
 
+"""-----------------------------------------SERVICE MARKET DATA EXAMPLE----------------------------------------------
+http://ci-macsi/jenkins/job/service_pipelines/job/dev/External_20docs/"""
 
-"""-----------------------------------------SERVICE MARKET DATA EXAMPLE----------------------------------------------"""
-
-# task['marketData']['rates']['USD']['rateCurve'] = curve
-# task['marketData']['rates']['USDLIBOR6M']['rateSpreads'] = curve
 
 curve = {
         "dates": ["2000-12-05T00:00:00.000Z", "2030-12-05T00:00:00.000Z"],
@@ -132,7 +130,7 @@ def get_bond_task(ccy, curve, asof, pmnt_date):
     """
 
     :str ccy: 'EUR'
-    :curve dsc_curve: dict (check mkt data example)
+    :dict curve : example -> please execute '??service' command for curve example
     :datetime asof: datetime(2018, 5, 12)
     :datetime pmnt_date: datetime(2019, 5, 12)
     """
@@ -320,3 +318,38 @@ def change_rateIndex(task, ccy, tenor):
 #     },
 #     "requests": ['NPV']
 #     }
+"""----------------------------------------DUMMIES-------------------------------------------------------"""
+
+def xva_dummy_diffusion(asof):
+    return {
+        'marketData': {
+            'rates': {
+                'USD': {
+                  'rateCurve': {
+                    'dates': [ '0D', '1Y' ],
+                    'zeroRates': [ 0.0, 0.0 ]
+                   },
+                   'capFloorVolatilities': { 
+                     'liborTenors'    : ['3M'],
+                     'optionExpiries' : ['2017-04-01T00:00:00.000Z', '2030-10-01T00:00:00.000Z'],
+                     'strikes'        : [0.005, 0.01, 0.02],
+                     'volatilities'   : [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+                   }
+                }
+            }
+        },
+        'diffusion': {
+            'rates': {
+                'USD': {'type': 'HULL_AND_WHITE'}
+            }
+        },
+        'requests': ['XVA_DIFFUSION'],
+        'settings': {
+            'pricingDate': asof,
+            'hardware': 'CPU',
+            'xva': {
+                'currency': 'USD',
+                'dates': ['0D', '1M', '2M']
+            }
+        }
+    }
