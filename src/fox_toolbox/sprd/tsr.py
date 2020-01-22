@@ -15,9 +15,9 @@ def get_b(mr: float, start_date, end_date):
 def get_linear_coeffs(cal_instr, main_curve, mr: float, pmnt_date: float, fwd_curve=None):
     if not isinstance(cal_instr, rates.Swap):
         raise TypeError()
-    if not isinstance(main_curve, rates.Curve):
+    if not isinstance(main_curve, rates.RateCurve):
         raise TypeError()
-    if fwd_curve is not None and not isinstance(main_curve, rates.Curve):
+    if fwd_curve is not None and not isinstance(main_curve, rates.RateCurve):
         raise TypeError()
     if pmnt_date < cal_instr.start_date:
         raise ValueError()

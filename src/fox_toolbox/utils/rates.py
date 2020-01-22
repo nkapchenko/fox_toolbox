@@ -4,6 +4,7 @@ from collections import namedtuple
 from scipy.interpolate import interp1d
 
 
+
 def cast_to_array(x, type_=float):
     return np.array(x, dtype=type_)
 
@@ -15,7 +16,8 @@ def build_class_str(self, args_dic):
         yield from (f'{key}: {val!r}' for key, val in args_dic)
     return '\n'.join(generate())
 
-class _Curve:
+class Curve:
+    "Simple 1D curve object"
 
     @staticmethod
     def build_curve(x, y, kind='linear'):
@@ -33,11 +35,11 @@ class _Curve:
         # x = np.insert(self._dates, 0, 1e-6)
         # y = np.insert(self._values, 0, self._values[0])
         if interpolation_method == 'PieceWise':
-            self._curve = Curve.build_curve(self._buckets, self._values, kind='zero')
+            self._curve = self.build_curve(self._buckets, self._values, kind='zero')
         elif interpolation_method == 'Linear':
-            self._curve = Curve.build_curve(self._buckets, self._values)
+            self._curve = self.build_curve(self._buckets, self._values)
         elif interpolation_method == 'RateTime_Linear':
-            self._curve = Curve.build_curve(self._buckets, self._buckets * self._values)
+            self._curve = self.build_curve(self._buckets, self._buckets * self._values)
         else:
             raise NotImplementedError(f'"{self._interpolation_method}" interpolation method is not supported.')
 
@@ -50,30 +52,6 @@ class _Curve:
     @property
     def label(self):
         return self._label
-
-    def dump(self):
-        return {
-            'label': self._label,
-            'pillars': list(self._buckets),
-            'zc_rates': list(self._values)
-        }
-
-    def __iter__(self):
-        return (i for i in zip(self._buckets, self._values))
-
-    def __repr__(self):
-        class_name = type(self).__name__
-        return f'{class_name}({self._buckets!r}, {self._values!r}, {self._interpolation_method}, {self._label!r})'
-
-    def __str__(self):
-        lbls = 'Name Pillars Zero-coupons Interpolation'.split(' ')
-        data = (self._label, self._buckets, self._values, self._interpolation_method,)
-        return build_class_str(self, zip(lbls, data))
-
-
-class Curve1d(_Curve):
-    def __init__(self,  buckets: np.array, values: np.array, interpolation_method: str, label: str = ''):
-        super().__init__(buckets, values, interpolation_method, label)
 
     @property
     def buckets(self):
@@ -88,7 +66,21 @@ class Curve1d(_Curve):
         return self._curve(time)
 
 
-class Curve(_Curve):
+    def __iter__(self):
+        return (i for i in zip(self._buckets, self._values))
+
+    def __repr__(self):
+        class_name = type(self).__name__
+        return f'{class_name}({self._buckets!r}, {self._values!r}, {self._interpolation_method}, {self._label!r})'
+
+    def __str__(self):
+        lbls = 'Name Pillars Zero-coupons Interpolation'.split(' ')
+        data = (self._label, self._buckets, self._values, self._interpolation_method,)
+        return build_class_str(self, zip(lbls, data))
+
+
+
+class RateCurve(Curve):
     """
     An interest rate curve object which build interpolator upon intialization
     and provides vectorized methods for efficient retrieval of zero-coupons and
@@ -123,6 +115,12 @@ class Curve(_Curve):
     def zc_rates(self):
         return np.copy(self._values)
 
+    def dump(self):
+        return {
+            'label': self._label,
+            'pillars': list(self._buckets),
+            'zc_rates': list(self._values)
+        }
 
     def get_zc(self, t):
         t = float(t) if isinstance(t, int) else t
@@ -191,10 +189,10 @@ class Swap:
         data = (self._start_date, self._pmnt_dates, self._dcfs, self._libor_tenor)
         return build_class_str(self, zip(lbls, data))
 
-    def get_annuity(self, dsc_curve: Curve):
+    def get_annuity(self, dsc_curve: RateCurve):
         return np.dot(self._dcfs, dsc_curve.get_dsc(self._pmnt_dates))
 
-    def get_flt_adjustments(self, dsc_curve: Curve, fwd_curve: Curve):
+    def get_flt_adjustments(self, dsc_curve: RateCurve, fwd_curve: RateCurve):
         pmnts_count = self._pmnt_dates.size
         last_period_length = self._pmnt_dates[-1] - self._pmnt_dates[-2] if pmnts_count > 1 else self.swap_tenor
         last_period_length_month = int(last_period_length * 12 + 0.5)
@@ -214,7 +212,7 @@ class Swap:
             flt_adjs[i] = flt_adj
         return flt_adjs
 
-    def get_swap_rate(self, dsc_curve: Curve, fwd_curve: Curve=None, flt_adjs=None):
+    def get_swap_rate(self, dsc_curve: RateCurve, fwd_curve: RateCurve=None, flt_adjs=None):
         dscs = dsc_curve.get_dsc(self._pmnt_dates)
         flt_leg = dsc_curve.get_dsc(self.start_date) - dscs[-1]
         annuity = np.dot(self._dcfs, dscs)

@@ -3,7 +3,7 @@ import pandas as pd
 
 import numpy as np
 
-from fox_toolbox.utils.rates import Curve, Swap, Swaption, Volatility
+from fox_toolbox.utils.rates import RateCurve, Swap, Swaption, Volatility
 
 
 def get_xml(fpath):
@@ -79,7 +79,7 @@ def get_rate_curve(curve_node):
             raise ValueError("Cannot find curve.")
 
     label, interp, buckets, values = parse_1d_curve(curve_node)
-    curve = Curve(buckets, values, interp, label)
+    curve = RateCurve(buckets, values, interp, label)
     return curve
 
 
@@ -89,7 +89,7 @@ def get_curves(xmlfile):
     sprd_curves = []
     for node in sprd_curve_nodes:
         label, interp, buckets, values = parse_1d_curve(node)
-        curve = Curve(buckets, values + main_curve.zc_rates, interp, label)
+        curve = RateCurve(buckets, values + main_curve.zc_rates, interp, label)
         sprd_curves.append(curve)
     if len(sprd_curves) == 0:
         sprd_curves = None
