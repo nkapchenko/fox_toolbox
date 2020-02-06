@@ -3,6 +3,11 @@ from collections import namedtuple
 
 from scipy.interpolate import interp1d
 
+# Commit: 
+# added method to RateCurve: RateCurve.from_curve(curveObj) to create RateCurve from existing OneDCurve
+# added method to Swaption: Swaption.get_swap which returns the parent Swap object
+# added method to Swaption: Swaption.from_swap(swapObj, expiry, vol) to create Swaption from existing Swap precising expiry and vol
+# better __repr__ for Swaption
 
 
 def cast_to_array(x, type_=float):
@@ -16,7 +21,7 @@ def build_class_str(self, args_dic):
         yield from (f'{key}: {val!r}' for key, val in args_dic)
     return '\n'.join(generate())
 
-class Curve:
+class Curve(object):
     "Simple 1D curve object"
 
     @staticmethod
@@ -97,7 +102,7 @@ class RateCurve(Curve):
            :param values: zero-coupon rates as float array
            :param interpolation_method: supporting only Linear and RateTime_Linear methods
            """
-        super().__init__(buckets, values, interpolation_method, label)
+        super(RateCurve, self).__init__(buckets, values, interpolation_method, label) 
         assert interpolation_method in ['Linear', 'RateTime_Linear'], 'only Linear and RateTime_Linear interpolation is supported'
         self._dates = buckets
         self.__ratelinear = True if interpolation_method == 'RateTime_Linear' else False
@@ -144,6 +149,10 @@ class RateCurve(Curve):
     def get_fwd_dsc(self, t: float, T):
         res = self.get_dsc(np.asarray(T)) / self.get_dsc(t)
         return res if res.size > 1 or isinstance(T, np.ndarray) else type(T)(res)
+    
+    @classmethod
+    def from_curve(cls, curveObj):
+        return cls(curveObj.buckets, curveObj.values, curveObj.interpolation_mode, curveObj.label)
 
 
 class Swap:
@@ -248,5 +257,23 @@ class Swaption(Swap):
     def vol(self):
         return self._vol
 
+    
+    @property    
+    def get_swap(self):
+        return Swap(self.start_date, self.payment_dates, self.day_count_fractions, self.libor_tenor)
+
     def __repr__(self):
-        return f'{self.__dict__!r}'
+        class_name = type(self).__name__
+        return f'{class_name}({self._expiry}, {self._vol}, {self._start_date!r}, {self._pmnt_dates!r}, {self._dcfs!r}, {self._libor_tenor})'
+    
+    @classmethod
+    def from_swap(cls, swapObj, expiry, vol):
+        return cls(expiry, vol, swapObj.start_date, swapObj.payment_dates, swapObj.day_count_fractions, swapObj.libor_tenor)
+    
+    def asdict(cls):
+        _excluded_keys = []
+        return dict((key, value) for (key, value) in cls.__dict__.items() if (key not in _excluded_keys ))
+    
+
+if __name__ == "__main__":
+    print('hello')

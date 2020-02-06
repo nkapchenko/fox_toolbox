@@ -1,10 +1,15 @@
 import xml.etree.ElementTree as ET
 import pandas as pd
-
+import os
 import numpy as np
 
-from fox_toolbox.utils.rates import RateCurve, Swap, Swaption, Volatility
+from fox_toolbox.utils.rates import Curve, RateCurve, Swap, Swaption, Volatility
 
+# parse_1d_curve returns now Curve object
+
+def get_files(regex, regex2=''): 
+    files = [file for file in os.listdir() if all(x in file for x in ['xml', regex, regex2])]
+    return files[0] if len(files) == 1 else files 
 
 def get_xml(fpath):
     xml_tree = ET.parse(fpath)
@@ -52,7 +57,7 @@ def parse_1d_curve(node):
     buckets = get_delim_float_node(node, 'Buckets')
     values = get_delim_float_node(node, 'Values')
     interp = get_str_node(node, 'InterpolationMethod')
-    return label, interp, buckets, values
+    return Curve(buckets, values, interp, label)
 
 
 def parse_2d_curve(node):
@@ -78,19 +83,23 @@ def get_rate_curve(curve_node):
         else:
             raise ValueError("Cannot find curve.")
 
-    label, interp, buckets, values = parse_1d_curve(curve_node)
-    curve = RateCurve(buckets, values, interp, label)
-    return curve
+    oneDcurve = parse_1d_curve(curve_node)
+    return RateCurve.from_curve(oneDcurve)
 
 
-def get_curves(xmlfile):
-    main_curve = get_rate_curve(xmlfile.find('.//RateCurve'))
-    sprd_curve_nodes = xmlfile.findall('.//SpreadRateCurveList/SpreadRateCurves/SpreadRateCurve/OneDCurve')
+def get_rate_curves(node_or_file):
+    "returns main curve and list of spreads curve as rates.RateCurve"
+    process_node = _get_node(node_or_file, node_name = 'Process')  
+    
+    assert process_node.tag in ['Process', 'Query'], f'argument should be <Process> or <Query> node, but not {process_node.tag}'
+    
+    main_curve = get_rate_curve(process_node.find('.//RateCurve'))
+    sprd_curve_nodes = process_node.findall('.//SpreadRateCurveList/SpreadRateCurves/SpreadRateCurve/OneDCurve')
     sprd_curves = []
     for node in sprd_curve_nodes:
-        label, interp, buckets, values = parse_1d_curve(node)
-        curve = RateCurve(buckets, values + main_curve.zc_rates, interp, label)
-        sprd_curves.append(curve)
+        curve = parse_1d_curve(node)
+        rate_curve = RateCurve(curve.buckets, curve.values + main_curve.zc_rates, curve.interpolation_mode, curve.label)
+        sprd_curves.append(rate_curve)
     if len(sprd_curves) == 0:
         sprd_curves = None
     return main_curve, sprd_curves
@@ -98,9 +107,9 @@ def get_curves(xmlfile):
 
 def get_hw_params(xmlfile):
     params_node = xmlfile.find('.//FactorsList/Factors/Factor')
-    _, _, buckets, values = parse_1d_curve(params_node.find('VolatilityCurve/OneDCurve'))
+    curve = parse_1d_curve(params_node.find('VolatilityCurve/OneDCurve'))
     mr = get_float_node(params_node, 'MeanRR')
-    return mr, (buckets, values)
+    return mr, (curve.buckets, curve.values)
     
 
 def get_calib_instr(node):
@@ -146,13 +155,15 @@ def get_calib_instr(node):
 
 
 def get_calib_basket(xmlfile):
+    if isinstance(xmlfile, str):
+        _, xmlfile = get_xml(xmlfile)
     for instr in xmlfile.iterfind(".//CalibrationInstrument"):
         yield get_calib_instr(instr)
 
 
-def parse_process(xml_node):
-    assert xml_node.tag == 'Process', 'should be <Process> node'
-    main_curve, spread_curves = get_curves(xml_node)
+def parse_process(process_node):
+    assert process_node.tag == 'Process', 'should be <Process> node'
+    main_curve, spread_curves = get_rate_curves(process_node)
     dic_ = {
         'pillars': main_curve.curve_pillars,
         main_curve.label: main_curve.zc_rates
@@ -167,22 +178,26 @@ def parse_process_list(xml_node):
     """xml_node = BucketProcess"""
     dfs = []
     for p in xml_node.findall('.//Process'):
-        ccy = get_str_node(p, './/ProcessLabel')
+        if p.find('RateCurve') is None:
+            continue
         df = parse_process(p)
-        df['ccy'] = ccy
-        dfs.append(df)
-    return pd.concat(dfs, ignore_index=True)
+        df['ccy'] = get_str_node(p, './/ProcessLabel')
+        yield df
 
 
 def parse_debug(xml_node):
-	# Nikita
+    # Nikita
+    if isinstance(xml_node, str):
+        _, xml_node = get_xml(xml_node)
+        
     qfields = 'QRType QRLabel QRAsset QRLevel QRRefCurveLabel'.split(' ')
     dfs = []
     for query in xml_node.findall('.//Query'):
         qdfs = []
         qr_buckets_list = get_delim_float_node(query, './/QRBuckets/OneDCurve/Buckets', 0.0)
         for qr_bucket, process_list in zip(qr_buckets_list, query.findall('.//BucketProcess')):
-            df = parse_process_list(process_list)
+            df_gen = parse_process_list(process_list)
+            df = pd.concat(list(df_gen))
             df['Bucket'] = qr_bucket
             qdfs.append(df)
 
@@ -194,7 +209,7 @@ def parse_debug(xml_node):
 
 
 def _get_bumped_curves(xmlfile):
-    main_curve, sprds = get_curves(xmlfile.find('.//Process'))
+    main_curve, sprds = get_rate_curves(xmlfile.find('.//Process'))
     labels = [curve.label for curve in sprds]
     labels.insert(0, main_curve.label)
     df = parse_debug(xmlfile)
@@ -202,12 +217,34 @@ def _get_bumped_curves(xmlfile):
         yield df.pivot_table(values=[lbl], index=['ccy','pillars'], columns=['QRType', 'Bucket'])
 
 
-def get_bumped_curves(xml_name):
-    """return list of data frames. each data frame is all bump scenarios for specific curve label (ex. USD STD)"""
-    _, xmlfile = get_xml(xml_name)
-    return list(_get_bumped_curves(xmlfile))
+def get_bumped_curves(xml_file):
+    """yield data frame with bump scenarios for some curve label (ex. USD STD)"""
+    _, xml_tree = get_xml(xml_file)
+    return _get_bumped_curves(xml_tree)
+
+def parse_rate_curves(xml_file):
+    _, xml_tree = get_xml(xml_file)
+    return parse_process_list(xml_tree)
 
 def get_curve_bumps(xml_name):
+    #  Nikita: not yet implemented
     bumped_curves = get_bumped_curves(xml_name)
     for crv in bumped_curves:
-        yield crv - crv
+        yield crv 
+
+        
+def _get_node(node_or_file, node_name):
+    'parse node or file to return <Process> node'
+    
+    regex = f'.//{node_name}'
+    
+    if isinstance(node_or_file, str):
+        _, tree = get_xml(node_or_file)
+        return tree.find(regex)
+    elif ET.iselement(node_or_file):
+        if not node_or_file.tag == node_name:
+            return node_or_file.find(regex)
+        else:
+            return node_or_file
+    else:
+        TypeError(f'input should be str or ET.tree not {type(node_or_file)}')
