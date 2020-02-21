@@ -96,7 +96,7 @@ def BachelierPrice(F, K, v, w = 1.0):
     return v * (w * x * norm.cdf(w * x) + norm.pdf(x))
 
 def BSPrice(F, K, v, w = 1.0):
-    """Calculates Black&Scholes option price.
+    """Calculates UNDISCOUNTED Black&Scholes option price.
 
     Parameters
     ----------
