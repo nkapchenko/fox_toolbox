@@ -79,7 +79,7 @@ class Curve(object):
 
     def __repr__(self):
         class_name = type(self).__name__
-        return f'{class_name}({self._buckets!r}, {self._values!r}, {self._interpolation_method}, {self._label!r})'
+        return f'{class_name}({self._buckets!r}, {self._values!r}, \'{self._interpolation_method}\', {self._label!r})'
 
     def __str__(self):
         lbls = 'Name Pillars Zero-coupons Interpolation'.split(' ')
